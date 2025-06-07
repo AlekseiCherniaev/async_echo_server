@@ -1,9 +1,11 @@
+import asyncio
 import socket
+from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
 
-from main import setup_server_socket
+from main import setup_server_socket, echo
 
 
 class TestServerSocket:
@@ -41,5 +43,35 @@ class TestServerSocket:
 
         with pytest.raises(RuntimeError, match="Error starting server"):
             setup_server_socket(host=get_host, port=get_port)
+
+        mock_socket_instance.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_echo_connection(self, mocker: MockerFixture) -> None:
+        mock_socket = mocker.patch("socket.socket")
+        mock_socket_instance = mock_socket.return_value
+
+        mock_loop = mocker.AsyncMock(spec=asyncio.AbstractEventLoop)
+        mock_loop.sock_recv = AsyncMock(side_effect=[b"test data", b""])
+        mock_loop.sock_sendall = AsyncMock()
+
+        await echo(mock_socket_instance, mock_loop)
+
+        mock_loop.sock_recv.assert_awaited_with(mock_socket_instance, 1024)
+        mock_loop.sock_sendall.assert_awaited_with(mock_socket_instance, b"test data")
+        mock_socket_instance.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_echo_disconnection(self, mocker: MockerFixture) -> None:
+        mock_socket = mocker.patch("socket.socket")
+        mock_socket_instance = mock_socket.return_value
+
+        mock_loop = mocker.AsyncMock(spec=asyncio.AbstractEventLoop)
+        mock_loop.sock_recv = AsyncMock(side_effect=[b"test data", b""])
+        mock_loop.sock_sendall = AsyncMock()
+
+        error = ConnectionError("Connection retested by peer")
+        mock_loop.sock_recv = AsyncMock(side_effect=error)
+        await echo(mock_socket_instance, mock_loop)
 
         mock_socket_instance.close.assert_called_once()
