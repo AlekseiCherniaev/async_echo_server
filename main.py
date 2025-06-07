@@ -1,6 +1,6 @@
 def main() -> None:
     print("Hello from async-echo-server!")
-
+    print("test precommit and PR settings")
     return None
 
 
