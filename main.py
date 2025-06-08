@@ -3,6 +3,8 @@ import logging
 import socket
 from asyncio import AbstractEventLoop
 
+from logger import prepare_logger
+
 logger = logging.getLogger("echo_server")
 logging.basicConfig(level=logging.DEBUG)
 
@@ -58,4 +60,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    prepare_logger(log_level="DEBUG")
     asyncio.run(main())
