@@ -7,6 +7,8 @@ logger = logging.getLogger("echo_server")
 
 
 class EchoServer:
+    """Initializes the EchoServer with host and port."""
+
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
@@ -15,11 +17,13 @@ class EchoServer:
         self.connections: set[asyncio.Task[None]] = set()
 
     async def start(self) -> None:
+        """Starts the echo server."""
         self.server_socket = self._setup_server_socket()
         loop = asyncio.get_running_loop()
         self.server_task = asyncio.create_task(self._listen_for_connections(loop))
 
     async def stop(self) -> None:
+        """Stops the echo server gracefully."""
         if self.server_task:
             self.server_task.cancel()
             try:
@@ -35,6 +39,7 @@ class EchoServer:
             logger.info("Server socket closed")
 
     def _setup_server_socket(self) -> socket.socket:
+        """Creates and configures the server socket."""
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.setblocking(False)
@@ -50,6 +55,7 @@ class EchoServer:
         return server_socket
 
     async def _listen_for_connections(self, event_loop: AbstractEventLoop) -> None:
+        """Listens for incoming connections and spawns echo handlers."""
         try:
             if self.server_socket is None:
                 raise RuntimeError("Server socket is not initialized")
@@ -66,6 +72,7 @@ class EchoServer:
 
     @staticmethod
     async def _echo(connection: socket.socket, event_loop: AbstractEventLoop) -> None:
+        """Handles an individual client connection by echoing received data."""
         try:
             while data := await event_loop.sock_recv(connection, 1024):
                 await event_loop.sock_sendall(connection, data)
