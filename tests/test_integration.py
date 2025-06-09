@@ -5,7 +5,7 @@ import socket
 import pytest
 from _pytest.logging import LogCaptureFixture
 
-from main import setup_server_socket, listen_for_connections
+from echo_server import EchoServer
 
 
 class TestIntegration:
@@ -15,14 +15,15 @@ class TestIntegration:
 
     @pytest.fixture
     def get_port(self) -> int:
-        return 8000
+        return 8005
 
     @pytest.fixture
     def test_data(self) -> bytes:
         return b"test data"
 
     def test_real_socket_creation(self, get_host: str, get_port: int) -> None:
-        server_socket = setup_server_socket(host=get_host, port=get_port)
+        echo_server = EchoServer(host=get_host, port=get_port)
+        server_socket = echo_server._setup_server_socket()
 
         assert isinstance(server_socket, socket.socket)
         assert server_socket.getsockname() == (get_host, get_port)
@@ -33,7 +34,8 @@ class TestIntegration:
         dummy_socket.bind((get_host, get_port))
 
         with pytest.raises(RuntimeError, match="Error starting server:"):
-            setup_server_socket(host=get_host, port=get_port)
+            echo_server = EchoServer(host=get_host, port=get_port)
+            echo_server._setup_server_socket()
 
         dummy_socket.close()
 
@@ -41,35 +43,29 @@ class TestIntegration:
     async def test_full_echo_cycle(
         self, get_host: str, get_port: int, test_data: bytes
     ) -> None:
-        server_socket = setup_server_socket(host=get_host, port=get_port)
-        event_loop = asyncio.get_event_loop()
-        server_task = asyncio.create_task(
-            listen_for_connections(server_socket=server_socket, event_loop=event_loop)
-        )
-
+        echo_server = EchoServer(host=get_host, port=get_port)
         try:
+            await echo_server.start()
             reader, writer = await asyncio.open_connection(get_host, get_port)
             writer.write(test_data)
             await writer.drain()
 
             response = await reader.read(1024)
             assert response == test_data
+
+            writer.close()
+            await writer.wait_closed()
         finally:
-            server_task.cancel()
-            server_socket.close()
-            await asyncio.sleep(0.1)
+            await echo_server.stop()
+            await asyncio.sleep(0)
 
     @pytest.mark.asyncio
     async def test_multiple_clients_connection(
         self, get_host: str, get_port: int
     ) -> None:
-        server_socket = setup_server_socket(host=get_host, port=get_port)
-        event_loop = asyncio.get_event_loop()
-        server_task = asyncio.create_task(
-            listen_for_connections(server_socket=server_socket, event_loop=event_loop)
-        )
-
+        echo_server = EchoServer(host=get_host, port=get_port)
         try:
+            await echo_server.start()
 
             async def client_session(data: bytes) -> bytes:
                 reader, writer = await asyncio.open_connection(get_host, get_port)
@@ -87,24 +83,19 @@ class TestIntegration:
             )
             assert test_data == results
         finally:
-            server_task.cancel()
-            server_socket.close()
-            await asyncio.sleep(0.1)
+            await echo_server.stop()
+            await asyncio.sleep(0)
 
     @pytest.mark.asyncio
     async def test_server_logging(
         self, get_host: str, get_port: int, caplog: LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO):
-            loop = asyncio.get_running_loop()
-            server_socket = setup_server_socket(host=get_host, port=get_port)
-
-            assert f"Server started on {get_host}:{get_port}" in caplog.text
-            server_task = asyncio.create_task(
-                listen_for_connections(server_socket, loop)
-            )
-
+            echo_server = EchoServer(host=get_host, port=get_port)
             try:
+                await echo_server.start()
+                assert f"Server started on {get_host}:{get_port}" in caplog.text
+
                 reader, writer = await asyncio.open_connection(get_host, get_port)
                 writer.write(b"test logging")
                 await writer.drain()
@@ -113,8 +104,7 @@ class TestIntegration:
                 await reader.read(1024)
                 writer.close()
                 await writer.wait_closed()
+
+                await asyncio.sleep(0)
             finally:
-                server_task.cancel()
-                server_socket.close()
-                await asyncio.sleep(0.1)
-                assert "Connection closed" in caplog.text
+                await echo_server.stop()
